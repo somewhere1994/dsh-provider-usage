@@ -68,6 +68,7 @@ body[data-ds-dark-theme] .dpu-card:hover{box-shadow:0 14px 36px rgba(0,0,0,.38),
 .dpu-collapsed-provider{flex:none;font-size:11px;font-weight:700;line-height:16px;color:var(--dsw-alias-label-tertiary)}
 .dpu-collapsed-headline{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 13px/18px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
 .dpu-collapsed-count{margin-left:auto;flex:none;font-size:10px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-caption)}
+.dpu-collapsed-meta{flex:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
 .dpu-chevron{flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:5px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1;transition:transform .18s ease}
 .dpu-card[data-expanded="true"] .dpu-chevron{transform:rotate(180deg)}
 .dpu-head{display:flex;align-items:center;gap:6px}
@@ -439,6 +440,16 @@ export function UsageDock({ rpc, t, locale = 'zh' }) {
     { id: 'kimi', label: t('kimi'), snapshot },
   ]
 
+  const rollingQuota = provider === 'kimi'
+    ? display.quotas?.find(quota => quota.id === 'rolling5h')
+    : undefined
+  const collapsedHeadline = rollingQuota?.available === true
+    ? `${formatDecimal(rollingQuota.remaining)} / ${formatDecimal(rollingQuota.limit)}`
+    : display.headline
+  const collapsedMeta = rollingQuota?.available === true
+    ? t('rolling5hReset', { value: formatReset(rollingQuota.resetTime, dateLocale) })
+    : rollingQuota === undefined ? null : t('quotaUnavailable')
+
   const collapsedRow = React.createElement('button', {
     type: 'button',
     className: 'dpu-collapsed',
@@ -451,7 +462,11 @@ export function UsageDock({ rpc, t, locale = 'zh' }) {
   },
   React.createElement('span', { className: `dpu-dot ${statusHealth}` }),
   React.createElement('span', { className: 'dpu-collapsed-provider' }, display.providerLabel),
-  React.createElement('strong', { className: 'dpu-collapsed-headline' }, display.headline),
+  React.createElement('strong', { className: 'dpu-collapsed-headline' }, collapsedHeadline),
+  collapsedMeta === null ? null : React.createElement('span', {
+    className: 'dpu-collapsed-meta',
+    title: collapsedMeta,
+  }, collapsedMeta),
   React.createElement('span', {
     className: 'dpu-collapsed-count',
     title: t('autoRefresh'),

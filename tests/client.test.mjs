@@ -235,6 +235,24 @@ test('UsageDock loads once, switches locally, and force refreshes separately', a
   assert.equal(stage?.dataset.open, 'false')
 })
 
+test('collapsed Kimi row shows the 5h rolling allowance and its reset time', async () => {
+  render(React.createElement(UsageDock, {
+    rpc: { call: () => Promise.resolve({ ok: true, value: snapshot }) },
+    t: zhT,
+    locale: 'zh',
+  }))
+
+  await screen.findByText('CNY 12.30')
+  fireEvent.click(screen.getByRole('button', { name: '展开额度面板' }))
+  fireEvent.click(screen.getByRole('tab', { name: 'Kimi Code' }))
+  fireEvent.click(screen.getByRole('button', { name: '收起额度面板' }))
+
+  const meta = document.querySelector('.dpu-collapsed-meta')
+  assert.ok(screen.getByText('100 / 100'))
+  assert.match(meta?.textContent ?? '', /5 小时/u)
+  assert.match(meta?.textContent ?? '', /重置/u)
+})
+
 test('UsageDock anchors itself directly below the composer card on the hero new-conversation page', async () => {
   const composerRef = {}
   function HeroFixture() {
