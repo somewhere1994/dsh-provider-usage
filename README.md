@@ -9,12 +9,15 @@ conversation composer area:
   - the **7-day allowance** (`usage`, or an explicit 10080-minute rolling window when present)
   - the **5-hour rolling allowance** (300-minute window from `limits`)
 
-The card starts collapsed to a compact status row. Expanding it reveals
-clickable DeepSeek/Kimi tabs, the 5h/7d quota details, a manual refresh
-button, the last refresh time, and the next auto-refresh countdown. It
-refreshes automatically every 60 seconds. On the new-conversation hero page
-the card floats directly below the composer card; in an active conversation
-it docks below the stats line at the bottom of the composer.
+The card starts collapsed to a compact status row. When a conversation
+opens, the active provider follows the session's currently selected model
+(DeepSeek or Kimi Code) automatically. Expanding the card reveals clickable
+DeepSeek/Kimi tabs for manual switching, the 5h/7d quota details, a manual
+refresh button, the last refresh time, and the next auto-refresh countdown.
+Once you switch tabs manually, the card keeps your choice. It refreshes
+automatically every 60 seconds. On the new-conversation hero page the card
+floats directly below the composer card; in an active conversation it docks
+below the stats line at the bottom of the composer.
 
 Credentials are resolved by Harness on the host (`DEEPSEEK_API_KEY` and
 `KIMI_CODING_API_KEY`). API keys never cross the browser boundary: the client

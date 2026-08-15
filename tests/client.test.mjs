@@ -14,7 +14,7 @@ globalThis.Node = dom.window.Node
 globalThis.MutationObserver = dom.window.MutationObserver
 globalThis.getComputedStyle = dom.window.getComputedStyle
 
-const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react')
+const { act, cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react')
 const {
   AUTO_REFRESH_MS,
   COPY,
@@ -70,6 +70,22 @@ const snapshot = {
       weekly7d: weekly,
     },
   },
+}
+
+function createModelStore(initial) {
+  let state = { current: initial }
+  const listeners = new Set()
+  return {
+    getSnapshot: () => state,
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    set(next) {
+      state = next
+      for (const listener of listeners) listener()
+    },
+  }
 }
 
 test('client cadence is one tick per second with a 60 second refresh target', () => {
@@ -253,6 +269,35 @@ test('collapsed Kimi row shows the 5h rolling allowance and its reset time', asy
   assert.match(meta?.textContent ?? '', /重置/u)
 })
 
+test('UsageDock follows the selected model until the user switches manually', async () => {
+  const modelStore = createModelStore({ provider: 'deepseek-official', model: 'deepseek-chat' })
+  render(React.createElement(UsageDock, {
+    rpc: { call: () => Promise.resolve({ ok: true, value: snapshot }) },
+    t: zhT,
+    locale: 'zh',
+    modelDirectory: modelStore,
+  }))
+
+  await screen.findByText('CNY 12.30')
+  assert.equal(document.querySelector('[data-provider-usage]')?.dataset.provider, 'deepseek')
+
+  act(() => {
+    modelStore.set({ current: { provider: 'kimi-coding', model: 'kimi-k2' } })
+  })
+  await screen.findByText('100 / 100')
+  assert.equal(document.querySelector('[data-provider-usage]')?.dataset.provider, 'kimi')
+
+  fireEvent.click(screen.getByRole('button', { name: '展开额度面板' }))
+  fireEvent.click(screen.getByRole('tab', { name: 'DeepSeek' }))
+  assert.equal(document.querySelector('[data-provider-usage]')?.dataset.provider, 'deepseek')
+
+  act(() => {
+    modelStore.set({ current: { provider: 'kimi-coding', model: 'kimi-k2' } })
+  })
+  await act(async () => {})
+  assert.equal(document.querySelector('[data-provider-usage]')?.dataset.provider, 'deepseek')
+})
+
 test('UsageDock anchors itself directly below the composer card on the hero new-conversation page', async () => {
   const composerRef = {}
   function HeroFixture() {
@@ -335,6 +380,16 @@ test('Client apply registers and disposes the hero-visible input dock entry', ()
   const effects = []
   const ctx = {
     connection: { rpc: { call() {} } },
+    get(name) {
+      if (name === 'modelDirectories') {
+        return {
+          directoryFor(sessionId) {
+            return { store: `model-store:${sessionId}` }
+          },
+        }
+      }
+      return undefined
+    },
     locale: {
       getLocale() { return { active: 'zh' } },
       register(namespace, dictionaries) {
@@ -345,14 +400,15 @@ test('Client apply registers and disposes the hero-visible input dock entry', ()
     slots: {
       inject(slot, factory) {
         registrations.push({ kind: 'inject', slot })
-        const dispose = factory()
+        const dispose = factory('session-1')
         return () => {
           dispose?.()
           disposed.push('inject')
         }
       },
       register(options, component) {
-        registrations.push({ kind: 'slot', options, component })
+        const injectFace = options.inject?.('session-1')
+        registrations.push({ kind: 'slot', options, component, injectFace })
         return () => disposed.push('slot')
       },
     },
@@ -365,7 +421,9 @@ test('Client apply registers and disposes the hero-visible input dock entry', ()
 
   assert.deepEqual(inject, ['slots', 'locale', 'connection'])
   const entry = registrations.find(item => item.kind === 'slot')
-  assert.equal(registrations.find(item => item.kind === 'inject').slot, 'conversation.input.dock')
+  const injectRegistration = registrations.find(item => item.kind === 'inject')
+  assert.equal(injectRegistration.slot, 'conversation.input.dock')
+  assert.equal(entry.injectFace.modelDirectory, 'model-store:session-1')
   assert.equal(entry.options.name, 'conversation.input.dock')
   assert.equal(entry.options.id, 'provider-usage')
   assert.equal(entry.options.order, 5)

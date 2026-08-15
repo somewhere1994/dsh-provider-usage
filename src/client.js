@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   AUTO_REFRESH_MS,
   COPY,
@@ -159,6 +159,20 @@ function healthOf(provider, snapshot) {
 
 function failedSnapshotFor(provider) {
   return { [provider]: { ok: false, error: { code: 'unavailable' } } }
+}
+
+const NO_MODEL_SNAPSHOT = Object.freeze({ current: null })
+function noopSubscribe() { return () => {} }
+function noModelSnapshot() { return NO_MODEL_SNAPSHOT }
+
+function providerForSelection(selection) {
+  if (selection === null || selection === undefined) return undefined
+  const provider = String(selection.provider ?? '').toLowerCase()
+  const model = String(selection.model ?? '').toLowerCase()
+  if (provider.includes('deepseek') || model.includes('deepseek')) return 'deepseek'
+  if (provider.includes('kimi') || provider.includes('moonshot')
+    || model.includes('kimi') || model.includes('moonshot')) return 'kimi'
+  return undefined
 }
 
 function clearHeroAnchor(root) {
@@ -341,8 +355,14 @@ function KimiBody({ display, locale, t }) {
       React.createElement('span', { className: 'dpu-quota-empty-hint' }, t('quotaUnavailable')))))
 }
 
-export function UsageDock({ rpc, t, locale = 'zh' }) {
-  const [provider, setProvider] = useState('deepseek')
+export function UsageDock({ rpc, t, locale = 'zh', modelDirectory }) {
+  const modelState = useSyncExternalStore(
+    modelDirectory?.subscribe ?? noopSubscribe,
+    modelDirectory?.getSnapshot ?? noModelSnapshot,
+    noModelSnapshot,
+  )
+  const selectedProvider = providerForSelection(modelState.current)
+  const [provider, setProvider] = useState(selectedProvider ?? 'deepseek')
   const [expanded, setExpanded] = useState(false)
   const [snapshot, setSnapshot] = useState()
   const [busy, setBusy] = useState(true)
@@ -355,6 +375,7 @@ export function UsageDock({ rpc, t, locale = 'zh' }) {
   const nextDueAt = useRef(0)
   const rpcRef = useRef(rpc)
   const rootRef = useRef(null)
+  const manualProvider = useRef(null)
   rpcRef.current = rpc
 
   const load = (force) => {
@@ -385,6 +406,12 @@ export function UsageDock({ rpc, t, locale = 'zh' }) {
         setNow(Date.now())
       })
   }
+
+  useEffect(() => {
+    if (selectedProvider !== undefined && manualProvider.current === null) {
+      setProvider(selectedProvider)
+    }
+  }, [selectedProvider])
 
   useEffect(() => {
     nextDueAt.current = Date.now() + AUTO_REFRESH_MS
@@ -435,6 +462,10 @@ export function UsageDock({ rpc, t, locale = 'zh' }) {
   const health = healthOf(provider, snapshot)
   const statusHealth = stale ? 'warn' : health
   const countdown = Math.max(0, Math.ceil((nextDueAt.current - now) / 1000))
+  const selectProvider = (next) => {
+    manualProvider.current = next
+    setProvider(next)
+  }
   const tabs = [
     { id: 'deepseek', label: t('deepseek'), snapshot },
     { id: 'kimi', label: t('kimi'), snapshot },
@@ -483,7 +514,7 @@ export function UsageDock({ rpc, t, locale = 'zh' }) {
         role: 'tablist',
         'aria-label': t('tabsLabel'),
       },
-      tabs.map(tab => createTab(tab, provider, provider === tab.id, () => setProvider(tab.id)))),
+      tabs.map(tab => createTab(tab, provider, provider === tab.id, () => selectProvider(tab.id)))),
       React.createElement('button', {
         type: 'button',
         className: 'dpu-refresh',
@@ -575,10 +606,19 @@ export function apply(ctx) {
       id: 'provider-usage',
       order: 5,
       locale: NS,
-      inject: () => ({
-        rpc: ctx.connection.rpc,
-        locale: ctx.locale.getLocale?.().active ?? 'zh',
-      }),
+      inject: (sessionId) => {
+        let modelDirectory
+        try {
+          modelDirectory = ctx.get?.('modelDirectories')?.directoryFor(sessionId)?.store
+        } catch {
+          modelDirectory = undefined
+        }
+        return {
+          rpc: ctx.connection.rpc,
+          locale: ctx.locale.getLocale?.().active ?? 'zh',
+          modelDirectory,
+        }
+      },
     }, UsageDock)),
     'provider-usage: input dock',
   )
