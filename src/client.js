@@ -448,7 +448,40 @@ export function UsageDock({ rpc, t, locale = 'zh', modelDirectory }) {
       mutationObserver = new MutationObserver(update)
       mutationObserver.observe(phaseRoot, { attributes: true, attributeFilter: ['data-phase'] })
     }
+    // Side panels (Explorer, sidebar) shifting the hero card change its
+    // POSITION, not its size, and never fire window resize — the observers
+    // above all stay silent and the fixed card keeps stale coordinates.
+    // Track the card rect on animation frames while the hero is up and
+    // re-anchor only when the geometry actually changes. setTimeout fallback
+    // keeps non-browser test environments (no rAF) alive.
+    const rafSchedule = typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame
+      : (callback) => setTimeout(callback, 16)
+    const rafCancel = typeof cancelAnimationFrame === 'function'
+      ? cancelAnimationFrame
+      : clearTimeout
+    let lastKey = ''
+    let raf = 0
+    const track = () => {
+      raf = rafSchedule(track)
+      if (phaseRoot?.getAttribute('data-phase') !== 'hero') {
+        if (lastKey !== '') {
+          lastKey = ''
+          clearHeroAnchor(root)
+        }
+        return
+      }
+      const card = document.querySelector('[data-composer-card]')
+      if (card === null) return
+      const rect = card.getBoundingClientRect()
+      const key = [rect.left, rect.top, rect.width, rect.height, window.innerWidth, window.innerHeight].join(',')
+      if (key === lastKey) return
+      lastKey = key
+      update()
+    }
+    track()
     return () => {
+      rafCancel(raf)
       window.removeEventListener('resize', update)
       resizeObserver?.disconnect()
       mutationObserver?.disconnect()
